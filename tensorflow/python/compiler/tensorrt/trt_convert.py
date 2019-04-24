@@ -169,6 +169,7 @@ class GraphConverter(object):
     self._calibration_graph = None
     self._calibration_sess = None
     self._calibration_data_collected = False
+    self._calibration_tables = []
 
   def get_rewriter_config(self, rewriter_config_template=None):
     """Returns a RewriterConfig proto for TRT transformation.
@@ -370,6 +371,7 @@ class GraphConverter(object):
 
     Returns:
       The GraphDef after the calibration.
+      Calibration tables, one per TRTEngineOp in the graph.
     """
     assert self._converted
     assert not self._calibration_sess
@@ -397,7 +399,7 @@ class GraphConverter(object):
           fetches, feed_dict=feed_dict_fn() if feed_dict_fn else None)
 
     self.finalize_calibration()
-    return self._converted_graph_def
+    return self._converted_graph_def, self._calibration_tables
 
   def finalize_calibration(self):
     """Clean up calibration resources and finalize the calibration.
@@ -714,6 +716,12 @@ class TrtGraphConverter(GraphConverter):
         use_function_backup=self._use_function_backup)
 
   def finalize_calibration(self):
+    """Calibrate graph using calibration batches of data. Generate calibration table.
+
+    Returns:
+      List of calibration tables, one per TRTEngineOp.
+    """
+
     assert self._need_calibration
     assert self._converted
     assert not self._calibration_data_collected
@@ -733,34 +741,41 @@ class TrtGraphConverter(GraphConverter):
     # Maps device name to the corresponding get_serialized_resource_op.
     device_to_get_resource_op_map = {}
 
+    # Reset calibration tables
+    self._calibration_tables = []
+
     with self._calibration_graph.as_default():
       container_input = array_ops.placeholder(dtypes.string)
       resource_name_input = array_ops.placeholder(dtypes.string)
+      calibration_tables = []
 
       for node in self._converted_graph_def.node:
-        if node.op == "TRTEngineOp":
-          # Adds the get_serialized_resource_op for the device if not done
-          # before. We only add one such op for each device.
-          # TODO(laigd): What if the device is empty?????
-          if node.device not in device_to_get_resource_op_map:
-            with self._calibration_graph.device(node.device):
-              serialized_resources_output = (
-                  get_serialized_resource_op(container_input,
-                                             resource_name_input))
-            device_to_get_resource_op_map[node.device] = (
-                serialized_resources_output)
+        # Ignore nodes that are not TRT
+        if node.op != "TRTEngineOp":
+            continue
+        # Adds the get_serialized_resource_op for the device if not done
+        # before. We only add one such op for each device.
+        # TODO(laigd): What if the device is empty?????
+        if node.device not in device_to_get_resource_op_map:
+          with self._calibration_graph.device(node.device):
+            serialized_resources_output = (
+                get_serialized_resource_op(container_input,
+                                           resource_name_input))
+          device_to_get_resource_op_map[node.device] = (
+              serialized_resources_output)
 
-          # Get the calibration resource.
-          calibration_result = self._calibration_sess.run(
-              device_to_get_resource_op_map[node.device],
-              feed_dict={
-                  container_input:
-                      TrtGraphConverter
-                      ._TRT_CALIBRATION_RESOURCE_CONTAINER_NAME,
-                  resource_name_input:
-                      node.name
-              })
-          node.attr["calibration_data"].s = calibration_result
+        # Get the calibration resource.
+        calibration_result = self._calibration_sess.run(
+            device_to_get_resource_op_map[node.device],
+            feed_dict={
+                container_input:
+                    TrtGraphConverter
+                    ._TRT_CALIBRATION_RESOURCE_CONTAINER_NAME,
+                resource_name_input:
+                    node.name
+            })
+        node.attr["calibration_data"].s = calibration_result
+        self._calibration_tables.append(calibration_result)
 
     self._calibration_data_collected = True
     self._calibration_sess.close()
