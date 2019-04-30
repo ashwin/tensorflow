@@ -717,9 +717,6 @@ class TrtGraphConverter(GraphConverter):
 
   def finalize_calibration(self):
     """Calibrate graph using calibration batches of data. Generate calibration table.
-
-    Returns:
-      List of calibration tables, one per TRTEngineOp.
     """
 
     assert self._need_calibration
