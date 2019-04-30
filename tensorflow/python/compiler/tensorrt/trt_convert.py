@@ -715,6 +715,15 @@ class TrtGraphConverter(GraphConverter):
         use_calibration=self._need_calibration,
         use_function_backup=self._use_function_backup)
 
+  def set_calib_tables(self, calib_tables):
+    """Set calibration tables into converted graph definition."""
+    assert self._converted, "Calibration tables can only be set on converted graph"
+    trt_nodes = [n for n in self._converted_graph_def.node if n.op == "TRTEngineOp"]
+    assert len(trt_nodes) == len(calib_tables), "Mismatch in number of TRT nodes and calibration tables"
+    for trt_node, calib_table in zip(trt_nodes, calib_tables):
+      trt_node.attr["calibration_data"].s = calib_table
+    return self._converted_graph_def
+
   def finalize_calibration(self):
     """Calibrate graph using calibration batches of data. Generate calibration table.
     """
@@ -798,6 +807,7 @@ def create_inference_graph(
     input_saved_model_tags=None,
     input_saved_model_signature_key=None,
     output_saved_model_dir=None,
+    calib_tables=None,
     session_config=None):
   """Python wrapper for the TRT transformation.
 
@@ -835,6 +845,7 @@ def create_inference_graph(
       returned GraphDef and save it to the specified directory. This option only
       works when the input graph is loaded from a SavedModel, i.e. when
       input_saved_model_dir is specified and input_graph_def is None.
+    calib_tables: List of calibration tables, one per TRTEngineOp in INT8 mode.
     session_config: the ConfigProto used to create a Session. It's also used as
       a template to create a TRT-enabled ConfigProto for conversion. If not
       specified, a default ConfigProto will be used.
@@ -877,6 +888,8 @@ def create_inference_graph(
       cached_engine_batches=cached_engine_batches,
       use_calibration=False)
   converted_graph_def = trt_converter.convert()
+  if precision_mode == TrtPrecisionMode.INT8 and calib_tables:
+      converted_graph_def = trt_converter.set_calib_tables(calib_tables)
   if output_saved_model_dir:
     trt_converter.save(output_saved_model_dir)
   return converted_graph_def
