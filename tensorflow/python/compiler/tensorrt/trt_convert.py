@@ -512,7 +512,7 @@ class TrtGraphConverter(GraphConverter):
         missing ranges. The calibration graph must be converted to an inference
         graph by running calibration with calibrate(). If set to False,
         quantization nodes will be expected for every tensor in the graph
-        (exlcuding those which will be fused). If a range is missing, an error
+        (excluding those which will be fused). If a range is missing, an error
         will occur. Please note that accuracy may be negatively affected if
         there is a mismatch between which tensors TRT quantizes and which
         tensors were trained with fake quantization.
@@ -615,7 +615,7 @@ class TrtGraphConverter(GraphConverter):
         missing ranges. The calibration graph must be converted to an inference
         graph by running calibration with calibrate(). If set to False,
         quantization nodes will be expected for every tensor in the graph
-        (exlcuding those which will be fused). If a range is missing, an error
+        (excluding those which will be fused). If a range is missing, an error
         will occur. Please note that accuracy may be negatively affected if
         there is a mismatch between which tensors TRT quantizes and which
         tensors were trained with fake quantization.
@@ -753,7 +753,6 @@ class TrtGraphConverter(GraphConverter):
     with self._calibration_graph.as_default():
       container_input = array_ops.placeholder(dtypes.string)
       resource_name_input = array_ops.placeholder(dtypes.string)
-      calibration_tables = []
 
       for node in self._converted_graph_def.node:
         # Ignore nodes that are not TRT
@@ -845,7 +844,7 @@ def create_inference_graph(
       returned GraphDef and save it to the specified directory. This option only
       works when the input graph is loaded from a SavedModel, i.e. when
       input_saved_model_dir is specified and input_graph_def is None.
-    calib_tables: List of calibration tables, one per TRTEngineOp in INT8 mode.
+    calib_tables: List of calibration tables, one for each TRTEngineOp in INT8 mode.
     session_config: the ConfigProto used to create a Session. It's also used as
       a template to create a TRT-enabled ConfigProto for conversion. If not
       specified, a default ConfigProto will be used.
