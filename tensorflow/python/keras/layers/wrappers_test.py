@@ -22,9 +22,11 @@ import copy
 
 import numpy as np
 
+from tensorflow.python.ops.array_ops import concat
 from tensorflow.python import keras
 from tensorflow.python.eager import context
 from tensorflow.python.framework import constant_op
+from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import test_util as tf_test_util
 from tensorflow.python.platform import test
 from tensorflow.python.training.tracking import object_identity
@@ -33,14 +35,13 @@ from tensorflow.python.training.tracking import util as trackable_util
 
 class _RNNCellWithConstants(keras.layers.Layer):
 
-  def __init__(self, units, **kwargs):
+  def __init__(self, units, constant_size, **kwargs):
     self.units = units
     self.state_size = units
+    self.constant_size = constant_size
     super(_RNNCellWithConstants, self).__init__(**kwargs)
 
   def build(self, input_shape):
-    [input_shape, constant_shape] = input_shape
-
     self.input_kernel = self.add_weight(
         shape=(input_shape[-1], self.units),
         initializer='uniform',
@@ -50,7 +51,7 @@ class _RNNCellWithConstants(keras.layers.Layer):
         initializer='uniform',
         name='recurrent_kernel')
     self.constant_kernel = self.add_weight(
-        shape=(constant_shape[-1], self.units),
+        shape=(self.constant_size, self.units),
         initializer='uniform',
         name='constant_kernel')
     self.built = True
@@ -65,7 +66,7 @@ class _RNNCellWithConstants(keras.layers.Layer):
     return output, [output]
 
   def get_config(self):
-    config = {'units': self.units}
+    config = {'units': self.units, 'constant_size': self.constant_size}
     base_config = super(_RNNCellWithConstants, self).get_config()
     return dict(list(base_config.items()) + list(config.items()))
 
@@ -290,6 +291,43 @@ class TimeDistributedTest(test.TestCase):
     # Custom layers are not whitelisted for the fast reshape implementation.
     td3 = keras.layers.TimeDistributed(NoReshapeLayer())
     self.assertFalse(td3._always_use_reshape)
+
+  @tf_test_util.run_in_graph_and_eager_modes
+  def test_TimeDistributed_output_shape_return_types(self):
+
+    class TestLayer(keras.layers.Layer):
+
+      def call(self, inputs):
+        return concat([inputs, inputs], axis=-1)
+
+      def compute_output_shape(self, input_shape):
+        output_shape = tensor_shape.TensorShape(input_shape).as_list()
+        output_shape[-1] = output_shape[-1] * 2
+        output_shape = tensor_shape.TensorShape(output_shape)
+        return output_shape
+
+    class TestListLayer(TestLayer):
+
+      def compute_output_shape(self, input_shape):
+        shape = super(TestListLayer, self).compute_output_shape(input_shape)
+        return shape.as_list()
+
+    class TestTupleLayer(TestLayer):
+
+      def compute_output_shape(self, input_shape):
+        shape = super(TestTupleLayer, self).compute_output_shape(input_shape)
+        return tuple(shape.as_list())
+
+    # Layers can specify output shape as list/tuple/TensorShape
+    test_layers = [TestLayer, TestListLayer, TestTupleLayer]
+    for layer in test_layers:
+      input_layer = keras.layers.TimeDistributed(layer())
+      inputs = keras.backend.placeholder(shape=(None, 2, 4))
+      output = input_layer(inputs)
+      self.assertEqual(output.shape.as_list(), [None, 2, 8])
+      self.assertEqual(
+          input_layer.compute_output_shape([None, 2, 4]).as_list(),
+          [None, 2, 8])
 
 
 class BidirectionalTest(test.TestCase):
@@ -589,7 +627,7 @@ class BidirectionalTest(test.TestCase):
       # Test basic case.
       x = keras.Input((5, 5))
       c = keras.Input((3,))
-      cell = _RNNCellWithConstants(32)
+      cell = _RNNCellWithConstants(32, 3)
       custom_objects = {'_RNNCellWithConstants': _RNNCellWithConstants}
       with keras.utils.CustomObjectScope(custom_objects):
         layer = keras.layers.Bidirectional(keras.layers.RNN(cell))
@@ -632,7 +670,7 @@ class BidirectionalTest(test.TestCase):
       c = keras.Input((3,))
       s_for = keras.Input((32,))
       s_bac = keras.Input((32,))
-      cell = _RNNCellWithConstants(32)
+      cell = _RNNCellWithConstants(32, 3)
       custom_objects = {'_RNNCellWithConstants': _RNNCellWithConstants}
       with keras.utils.CustomObjectScope(custom_objects):
         layer = keras.layers.Bidirectional(keras.layers.RNN(cell))
@@ -677,6 +715,42 @@ class BidirectionalTest(test.TestCase):
       model.set_weights(weights)
       y_np_3 = model.predict([x_np, s_fw_np, s_bk_np, c_np])
       self.assertAllClose(y_np, y_np_3, atol=1e-4)
+
+  @tf_test_util.run_in_graph_and_eager_modes
+  def test_Bidirectional_output_shape_return_types(self):
+
+    class TestLayer(keras.layers.SimpleRNN):
+
+      def call(self, inputs):
+        return concat([inputs, inputs], axis=-1)
+
+      def compute_output_shape(self, input_shape):
+        output_shape = tensor_shape.TensorShape(input_shape).as_list()
+        output_shape[-1] = output_shape[-1] * 2
+        return tensor_shape.TensorShape(output_shape)
+
+    class TestListLayer(TestLayer):
+
+      def compute_output_shape(self, input_shape):
+        shape = super(TestListLayer, self).compute_output_shape(input_shape)
+        return shape.as_list()
+
+    class TestTupleLayer(TestLayer):
+
+      def compute_output_shape(self, input_shape):
+        shape = super(TestTupleLayer, self).compute_output_shape(input_shape)
+        return tuple(shape.as_list())
+
+    # Layers can specify output shape as list/tuple/TensorShape
+    test_layers = [TestLayer, TestListLayer, TestTupleLayer]
+    for layer in test_layers:
+      input_layer = keras.layers.Bidirectional(layer(1))
+      inputs = keras.backend.placeholder(shape=(None, 2, 4))
+      output = input_layer(inputs)
+      self.assertEqual(output.shape.as_list(), [None, 2, 16])
+      self.assertEqual(
+          input_layer.compute_output_shape([None, 2, 4]).as_list(),
+          [None, 2, 16])
 
   def test_Bidirectional_last_output_with_masking(self):
     rnn = keras.layers.LSTM

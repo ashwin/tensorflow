@@ -23,7 +23,7 @@ java_library(
         ":java_op_sources",
         ":java_sources",
     ],
-    data = [":libtensorflow_jni"],
+    data = [":libtensorflow_jni"] + tf_binary_additional_srcs(),
     javacopts = JAVACOPTS,
     plugins = [":processor"],
     visibility = ["//visibility:public"],
@@ -131,6 +131,19 @@ java_library(
     srcs = ["src/test/java/org/tensorflow/TestUtil.java"],
     javacopts = JAVACOPTS,
     deps = [":tensorflow"],
+)
+
+tf_java_test(
+    name = "EagerSessionTest",
+    size = "small",
+    srcs = ["src/test/java/org/tensorflow/EagerSessionTest.java"],
+    javacopts = JAVACOPTS,
+    test_class = "org.tensorflow.EagerSessionTest",
+    deps = [
+        ":tensorflow",
+        ":testutil",
+        "@junit",
+    ],
 )
 
 tf_java_test(

@@ -19,7 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 import re
-import sys
 import time
 
 import numpy as np
@@ -105,7 +104,7 @@ class FunctionTest(test.TestCase):
       with session.Session() as sess:
         self.assertAllEqual([18.0], self.evaluate(call))
 
-  @test_util.run_deprecated_v1
+  @test_util.run_v1_only("b/120545219")
   def testIdentityImplicitDeref(self):
 
     @function.Defun(dtypes.float32, func_name="MyIdentity")
@@ -824,19 +823,6 @@ class FunctionTest(test.TestCase):
     with self.session(graph=g) as sess:
       self.assertEqual(self.evaluate(y), 1)
       self.assertEqual(self.evaluate(z), 2)
-
-  def testStableName(self):
-
-    @function.Defun()
-    def Foo(x, y, z):
-      return math_ops.tanh(math_ops.matmul(x, y) + z)
-
-    if sys.byteorder == "big":
-      self.assertEqual("Foo_kEdkAG8SJvg",
-                       Foo.instantiate([dtypes.float32] * 3).name)
-    else:
-      self.assertEqual("Foo_aCYSbwBkR5A",
-                       Foo.instantiate([dtypes.float32] * 3).name)
 
   @test_util.run_deprecated_v1
   def testSignatureHash(self):
